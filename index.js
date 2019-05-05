@@ -82,11 +82,14 @@
             <div class="amount">
                 Amount: ${round(getAmount(transfer), 2)}
             </div>
+            <div class="name">
+                Name: ${transfer.name}
+            </div>
             <div class="hash">
                 Hash:  ${truncHash(transfer.transactionHash)}
             </div>
             <div class="view">
-                <a href="https://amberdata.io/transactions${transfer.transactionHash}" target="_blank">View ></a>
+                <a href="https://amberdata.io/transactions/${transfer.transactionHash}" target="_blank">View ></a>
             </div>
         </div>`
 
