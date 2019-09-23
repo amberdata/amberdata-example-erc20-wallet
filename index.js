@@ -12,7 +12,7 @@
     $(async function () {
         const queryParam = window.location.search.replace('?','')
         console.log(isAddress(queryParam))
-        let address = isAddress(queryParam) ? queryParam : '0x3f5ce5fbfe3e9af3971dd833d26ba9b5c936f0be'
+        let address = isAddress(queryParam) ? queryParam : '0xa910f92acdaf488fa6ef02174fb86208ad7722ba'
         /* Loads up the UI with a default address */
         await populateUI(address)
 
@@ -23,24 +23,18 @@
     /*                     API data Retrieval                      */
     /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
-    /* Base url for all requests */
-    const BASE_URL = 'https://web3api.io/api/v1/'
-    const FILTERS = '?page=0&size=50'
-
     /* Demo key - Get your API Key at amberdata.io/pricing
     * and place yours here! */
-    let config = {
-        headers: {"x-api-key": "UAK000000000000000000000000demo0001"}
-    }
+    const API_KEY = 'UAK000000000000000000000000demo0001'
+    const w3d = new Web3Data(API_KEY)
 
     /**
      * The following methods construct the url and sends it off to axios via the
      * get method.
      * @param address
      */
-    let getCurrentTokenBalances = (address) => axios.get(`${BASE_URL}addresses/${address}/tokens`, config)
-    let getCurrentTokenTransfers = (address) => axios.get(`${BASE_URL}addresses/${address}/token-transfers${FILTERS}&includePrice=true`, config)
-    let getHistoricalTokenBalances = (address, tokenAddress) => axios.get(`${BASE_URL}tokens/${tokenAddress}/holders/historical?timeFrame=30d&holderAddresses=${address}`, config)
+    const getCurrentTokenTransfers = (address) => axios.get(`${BASE_URL}addresses/${address}/token-transfers${FILTERS}&includePrice=true`, config)
+    const getHistoricalTokenBalances = (address, tokenAddress) => axios.get(`${BASE_URL}tokens/${tokenAddress}/holders/historical?timeFrame=30d&holderAddresses=${address}`, config)
 
 
     /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
@@ -48,10 +42,11 @@
     /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
     /* TODO: the image things is pretty ugly find better sol if possible */
-    let getTokenTemplate = (token) =>
+    const getTokenTemplate = (token) =>
         `<div class="token" data-address="${token.address}" data-name="${token.name}">
                 <div class="logo item">
-                    <img src="https://raw.githubusercontent.com/amberdata/tokens/master/images/${token.address}.png" onerror="if (this.src !== 'error.jpg') this.src = 'https://api2.clovers.network/clovers/svg/${token.address}/128';" alt="">
+                    <img src="http://localhost:3000/api/token/${token.address}"  alt="">
+<!--                    <img src="https://cdn.amberdata.io/images/tokens/${token.address}.png" onerror="this.src = hqx(blockies.create({ seed:address ,size: 8,scale: 1}),4).toDataURL()" alt="">-->
                 </div>
                 <div class="name item">
                     ${token.name} (${token.symbol})
@@ -61,15 +56,16 @@
                 </div>
             </div>`
 
-    let updateTokensList = (tokens, holderAddress) => {
-        let tokenList = $('#tokens .list')
+    const updateTokensList = (tokens, holderAddress) => {
+        const tokenList = $('#tokens .list')
 
         // Remove old list and create new
         tokenList.empty()
 
-        let tokenHtml = `${tokens.map(token => getTokenTemplate(token)).join('')}`
-        tokenList.append(tokenHtml)
-        if (tokenHtml.length > 5) {
+        const token = $(`${tokens.map(token => getTokenTemplate(token)).join('')}`)
+
+        tokenList.append(token)
+        if (tokenList.length > 5) {
             tokenList.append(`
                 <a style="color: #606060; margin:15px; 0"
                    href="https://amberdata.io/addresses/${holderAddress}/portfolio"
@@ -87,7 +83,7 @@
         }
     }
 
-    let getTransferTemplate = (transfer) =>
+    const getTransferTemplate = (transfer) =>
         `<div class="transfer">
             <div class="name">
                 Token: ${transfer.name}
@@ -103,12 +99,10 @@
             </div>
         </div>`
 
-    let updateTransfersList = (transfers) => {
-        let transferList = $('#token-transfers .list')
-
-        let transferHtml = `${transfers.map(transfer => getTransferTemplate(transfer)).join('')}`
+    const updateTransfersList = (transfers) => {
+        const transferList = $('#token-transfers .list')
+        const transferHtml = `${transfers.map(transfer => getTransferTemplate(transfer)).join('')}`
         transferList.append(transferHtml)
-
     }
 
     /**
@@ -118,52 +112,59 @@
     let populateUI = async (address) => {
         if (!isAddress(address)) return // Don't run unless valid ethereum address
         setLoading(true, 'transfers')
-        setLoading(true, )
+        setLoading(true)
+
         // TODO: Must be CONCURRENT -: let [balances, transfers] = Promise.all([, ])
-        let balances = extractData(await getCurrentTokenBalances(address))
-        let sortedBalances = sortBalances(balances.records)
-        updateTokensList(sortedBalances, address)
+        const balances = (await w3d.address.getTokens(address, {size: 5})).records
+
+        /*
+        let sortedBalances = sortBalances(balances.records)*/
+        updateTokensList(balances, address)
 
         // Create a map: tokenAddress -> decimals
-        let decimals = {}
-        sortedBalances.map( (token) => { decimals[token.address] = token.decimals })
+        const decimals = {}
+        balances.map( (token) => { decimals[token.address] = token.decimals })
 
-        const responses = await Promise.all(sortedBalances.map((token) => getHistoricalTokenBalances(token.holder, token.address)))
+        const responses = await Promise.all(balances.map(token => w3d.token.getTokenHoldersHistorical(token.address, {holderAddresses: token.holder})))
 
-        let data = responses.map((response) => extractData(response).data)
+        let data = responses.map(response => extractData(response).data)
 
         let timeSeriesData = {}
         for(let i = 0; i < data.length; i++) {
-            timeSeriesData[sortedBalances[i].address] = data[i].map((token) => {
+            timeSeriesData[balances[i].address] = data[i].map((token) => {
                 token['t'] = new Date(token.timestamp)
-                token['y'] = token[address] / Math.pow(10, sortedBalances[i].decimals)
+                token['y'] = token[address] / Math.pow(10, balances[i].decimals)
                 delete  token.timestamp
                 delete  token[address]
                 return token
             })
         }
 
+        console.log({...timeSeriesData})
+
         let tokenElement = $("#tokens .list .token")
         let tokenAddress = tokenElement.data('address')
         let tokenName = tokenElement.data('name')
 
-        let deviceWidth = (window.innerWidth > 0) ? window.innerWidth : screen.width;
+        instantiateChart(data[tokenAddress])
 
-        instantiateChart(data[tokenAddress], deviceWidth)
         /* Attach click handlers to tokens */
         createTokenListener(timeSeriesData)
+
+        /* Select the first token in the list*/
         tokenElement[1].click()
+
         setLoading(false)
-        let transfers = extractData(await getCurrentTokenTransfers(address))
+        const transfers = await w3d.address.getTokenTransfers(address, {includePrice: true, size: 50})
         console.log(transfers)
         updateTransfersList(transfers.records.slice(0, 50))
         setLoading(false, 'transfers')
         return {timeSeriesData}
     }
 
-    let setLoading = (bool, section) => {
+    const setLoading = (bool, section) => {
         if(section === 'transfers') {
-            let loader = $('.loader')
+            const loader = $('.loader')
 
             loader.css('opacity', bool ? '1' : '0')
 
@@ -176,7 +177,7 @@
                 $('#token-transfers .list').empty()
             }
         } else {
-            let loader = $('.spinner')
+            const loader = $('.spinner')
 
             loader.css('opacity', bool ? '1' : '0')
 
@@ -195,7 +196,8 @@
     let updateChart = async (data, tokenName) => {
         window.chart.data.datasets[0].data = data
         window.chart.data.datasets[0].label = tokenName
-        let imgSrc = $(`*[data-name="${tokenName}"] .logo img`).attr("src")
+        const imgSrc = $(`*[data-name="${tokenName}"] .logo img`).attr("src")
+        console.log(imgSrc)
         let vibrant = await Vibrant.from(imgSrc).getPalette();
 
         let vibRgb = vibrant.Vibrant || vibrant.LightVibrant || vibrant.DarkVibrant || vibrant.Muted || vibrant.LightMuted || vibrant.DarkMuted
@@ -207,7 +209,8 @@
         window.chart.update();
     }
 
-    let instantiateChart = (data, deviceWidth) => {
+    const instantiateChart = data => {
+        const deviceWidth = (window.innerWidth > 0) ? window.innerWidth : screen.width;
         if (window.chart) {
             window.chart.destroy()
         }
@@ -301,7 +304,7 @@
      * @param chart reference to the chart.js instance
      * @return {void | jQuery}
      */
-    let createTokenListener = (histHoldings) =>
+    const createTokenListener = histHoldings =>
     $("#tokens .list .token").click(function () {
         if(!$(this).is($('.selected'))) {
             $(this).siblings('.selected').toggleClass('selected')
@@ -315,10 +318,22 @@
         }
     });
 
+    const tokenLogo = document.querySelector('.token .logo')
+    console.log(tokenLogo)
+    // tokenLogo.onerror = () => createBlocky
 
     /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
     /*                      Helper methods                         */
     /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+    const createBlocky = (el, address) => {
+        console.log(el, address)
+        // const squareIcon = document.getElementById('squareIcon');
+        // squareIcon.style.backgroundImage = 'url(' + blockies.create({ seed:address ,size: 8,scale: 16}).toDataURL()+')'
+        // // If you want rounded and diagonals
+        // var roundIcon = document.getElementById('roundIcon');
+        // roundIcon.style.backgroundImage = 'url(' + hqx(blockies.create({ seed:address ,size: 8,scale: 1}),4).toDataURL()+')'
+    }
 
     let getAmount = (token) => token.amount / Math.pow(10, token.decimals)
 
@@ -327,7 +342,7 @@
     let round = (n, digits) => Number.parseFloat(n).toFixed(digits)
 
     /* Get's to the data we want. Makes things clearer.*/
-    let extractData = (data) => data.data.payload
+    let extractData = (data) => data.payload
 
     /* Renames an objects keys */
     let renameKeys = (keysMap, obj) => Object
@@ -349,7 +364,7 @@
             if (getAmount(a) < getAmount(b))
                 return 1
             return 0
-        }).slice(0, 5) // Limit top 5 results
+        }).slice(0, 10) // Limit top 5 results
 
     /**
      * Checks if the given string is an address
@@ -358,7 +373,7 @@
      * @param {String} address the given HEX address
      * @return {Boolean}
      */
-    let isAddress = function (address) {
+    const isAddress = function (address) {
         if (!/^(0x)?[0-9a-f]{40}$/i.test(address)) {
             // check if it has the basic requirements of an address
             return false;
